@@ -35,7 +35,13 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # Ensure reporting plugins are installed regardless of requirements.txt
+          pip install pytest-html pytest-json-report
+
+      - name: Create reports directory
+        run: mkdir -p reports/screenshots
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v1
@@ -57,7 +63,8 @@ jobs:
             --self-contained-html \
             --json-report \
             --json-report-file=reports/report.json \
-            -v
+            -v \
+            || true  # Don't fail the step on test failures — let upload happen first
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4
@@ -69,8 +76,21 @@ jobs:
 
       - name: Upload screenshots on failure
         uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: failure-screenshots
           path: reports/screenshots/
           retention-days: 7
+
+      - name: Fail job if tests failed
+        if: always()
+        run: |
+          if [ -f reports/report.json ]; then
+            FAILED=$(python3 -c "import json; d=json.load(open('reports/report.json')); print(d.get('summary',{}).get('failed',0))")
+            if [ "$FAILED" -gt "0" ]; then
+              echo "❌ $FAILED test(s) failed"
+              exit 1
+            else
+              echo "✅ All tests passed"
+            fi
+          fi
