@@ -10,12 +10,16 @@ on:
         type: choice
         options: [chrome, firefox]
       test_path:
-        description: 'Test file or directory (default: all generated tests)'
+        description: 'Test file or directory'
         required: false
         default: 'tests/generated/'
+      test_branch:
+        description: 'Branch containing generated test files'
+        required: false
+        default: 'e2etesting-anthropic'
 
   push:
-    branches: [auto-tests]
+    branches: [e2etesting-anthropic]
     paths:
       - 'tests/generated/**'
 
@@ -25,8 +29,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout test branch (contains generated test files)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.test_branch || 'e2etesting-anthropic' }}
+
+      - name: Checkout shared infrastructure from main
+        run: |
+          git fetch origin main
+          git checkout origin/main -- requirements.txt tests/conftest.py tests/__init__.py || true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,7 +48,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          # Ensure reporting plugins are installed regardless of requirements.txt
           pip install pytest-html pytest-json-report
 
       - name: Create reports directory
@@ -47,16 +57,18 @@ jobs:
         uses: browser-actions/setup-chrome@v1
         if: ${{ inputs.browser != 'firefox' }}
 
-      - name: Install Firefox
-        uses: browser-actions/setup-firefox@v1
-        if: ${{ inputs.browser == 'firefox' }}
+      - name: List test files (debug)
+        run: |
+          echo "=== Branch: ${{ inputs.test_branch || 'e2etesting-anthropic' }} ==="
+          echo "=== tests/generated/ contents ==="
+          ls -la tests/generated/ || echo "Directory not found"
 
       - name: Run tests
         env:
-          SELENIUM_BROWSER:   ${{ inputs.browser || 'chrome' }}
-          SELENIUM_HEADLESS:  'true'
-          SELENIUM_BASE_URL:  ${{ secrets.SELENIUM_BASE_URL }}
-          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          SELENIUM_BROWSER:  ${{ inputs.browser || 'chrome' }}
+          SELENIUM_HEADLESS: 'true'
+          SELENIUM_BASE_URL: ${{ secrets.SELENIUM_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           pytest ${{ inputs.test_path || 'tests/generated/' }} \
             --html=reports/report.html \
@@ -64,7 +76,7 @@ jobs:
             --json-report \
             --json-report-file=reports/report.json \
             -v \
-            || true  # Don't fail the step on test failures — let upload happen first
+            || true
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4
@@ -87,10 +99,15 @@ jobs:
         run: |
           if [ -f reports/report.json ]; then
             FAILED=$(python3 -c "import json; d=json.load(open('reports/report.json')); print(d.get('summary',{}).get('failed',0))")
+            TOTAL=$(python3 -c "import json; d=json.load(open('reports/report.json')); print(d.get('summary',{}).get('total',0))")
+            echo "Total: $TOTAL | Failed: $FAILED"
             if [ "$FAILED" -gt "0" ]; then
               echo "❌ $FAILED test(s) failed"
               exit 1
             else
-              echo "✅ All tests passed"
+              echo "✅ All $TOTAL tests passed"
             fi
+          else
+            echo "⚠️ No report.json found"
+            exit 1
           fi
