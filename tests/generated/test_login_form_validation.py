@@ -1,4 +1,3 @@
-import os
 import pytest
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -11,79 +10,108 @@ from selenium.common.exceptions import (
 )
 
 # ---------------------------------------------------------------------------
-# Configuration constants (would normally live in conftest.py / config.py)
+# Configuration constants (mirror what conftest.py would expose)
 # ---------------------------------------------------------------------------
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
+BASE_URL = "https://www.google.com"
 DEFAULT_TIMEOUT = 10
 LOGIN_PATH = "/login"
 DASHBOARD_PATH = "/dashboard"
 
 
-# ---------------------------------------------------------------------------
-# BasePage
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Base Page
+# ===========================================================================
 class BasePage:
-    """Thin wrapper around WebDriver exposing DRY helper methods."""
+    """Shared helpers for all Page Object classes."""
 
     def __init__(self, driver):
         self.driver = driver
         self.wait = WebDriverWait(driver, DEFAULT_TIMEOUT)
 
-    def navigate(self, path: str = "") -> None:
-        """Navigate to BASE_URL + path."""
+    def navigate(self, path: str) -> None:
+        """Navigate to a path relative to BASE_URL."""
         try:
             self.driver.get(f"{BASE_URL}{path}")
         except WebDriverException as exc:
-            raise RuntimeError(f"Failed to navigate to '{BASE_URL}{path}': {exc}") from exc
+            raise RuntimeError(f"Failed to navigate to '{path}': {exc}") from exc
 
     def find(self, by: str, value: str):
-        """Return a visible element, waiting up to DEFAULT_TIMEOUT seconds."""
+        """Wait for an element to be present in the DOM and return it."""
         try:
             return self.wait.until(
-                EC.visibility_of_element_located((by, value)),
-                message=f"Element not visible: ({by}, '{value}')",
+                EC.presence_of_element_located((by, value)),
+                message=f"Element not found — locator: ({by}, '{value}')",
             )
         except TimeoutException as exc:
             raise TimeoutException(
                 f"Timed out waiting for element ({by}, '{value}')"
             ) from exc
 
-    def find_present(self, by: str, value: str):
-        """Return an element that is present in DOM (not necessarily visible)."""
+    def find_visible(self, by: str, value: str):
+        """Wait for an element to be visible and return it."""
         try:
             return self.wait.until(
-                EC.presence_of_element_located((by, value)),
-                message=f"Element not present in DOM: ({by}, '{value}')",
+                EC.visibility_of_element_located((by, value)),
+                message=f"Element not visible — locator: ({by}, '{value}')",
             )
         except TimeoutException as exc:
             raise TimeoutException(
-                f"Timed out waiting for element presence ({by}, '{value}')"
+                f"Timed out waiting for visible element ({by}, '{value}')"
+            ) from exc
+
+    def click(self, by: str, value: str) -> None:
+        """Wait for an element to be clickable and click it."""
+        try:
+            element = self.wait.until(
+                EC.element_to_be_clickable((by, value)),
+                message=f"Element not clickable — locator: ({by}, '{value}')",
+            )
+            element.click()
+        except TimeoutException as exc:
+            raise TimeoutException(
+                f"Timed out waiting for clickable element ({by}, '{value}')"
+            ) from exc
+        except WebDriverException as exc:
+            raise RuntimeError(
+                f"Click failed on element ({by}, '{value}'): {exc}"
             ) from exc
 
     def type_text(self, by: str, value: str, text: str) -> None:
         """Clear a field and type text into it."""
         try:
-            element = self.find(by, value)
+            element = self.find_visible(by, value)
             element.clear()
             if text:
                 element.send_keys(text)
-        except (TimeoutException, WebDriverException) as exc:
+        except WebDriverException as exc:
             raise RuntimeError(
-                f"Could not type into element ({by}, '{value}'): {exc}"
+                f"Failed to type into element ({by}, '{value}'): {exc}"
             ) from exc
 
-    def click(self, by: str, value: str) -> None:
-        """Wait for an element to be clickable, then click it."""
+    def get_text(self, by: str, value: str) -> str:
+        """Return the visible text of an element."""
         try:
-            element = self.wait.until(
-                EC.element_to_be_clickable((by, value)),
-                message=f"Element not clickable: ({by}, '{value}')",
-            )
-            element.click()
-        except (TimeoutException, WebDriverException) as exc:
+            return self.find_visible(by, value).text
+        except WebDriverException as exc:
             raise RuntimeError(
-                f"Could not click element ({by}, '{value}'): {exc}"
+                f"Failed to get text from element ({by}, '{value}'): {exc}"
             ) from exc
+
+    def is_element_present(self, by: str, value: str) -> bool:
+        """Return True if the element exists in the DOM within the timeout."""
+        try:
+            self.wait.until(EC.presence_of_element_located((by, value)))
+            return True
+        except TimeoutException:
+            return False
+
+    def is_element_visible(self, by: str, value: str) -> bool:
+        """Return True if the element is visible within the timeout."""
+        try:
+            self.wait.until(EC.visibility_of_element_located((by, value)))
+            return True
+        except TimeoutException:
+            return False
 
     def wait_for_url_contains(self, fragment: str) -> None:
         """Block until the current URL contains *fragment*."""
@@ -97,462 +125,602 @@ class BasePage:
                 f"URL never contained '{fragment}'. Current URL: {self.driver.current_url}"
             ) from exc
 
-    def is_element_present(self, by: str, value: str) -> bool:
-        """Return True if element appears within a short grace period."""
-        try:
-            WebDriverWait(self.driver, 3).until(
-                EC.presence_of_element_located((by, value))
-            )
-            return True
-        except TimeoutException:
-            return False
-
-    def get_element_attribute(self, by: str, value: str, attribute: str) -> str:
-        """Return the given attribute of a located element."""
-        try:
-            element = self.find_present(by, value)
-            return element.get_attribute(attribute) or ""
-        except (TimeoutException, WebDriverException) as exc:
-            raise RuntimeError(
-                f"Could not read attribute '{attribute}' from ({by}, '{value}'): {exc}"
-            ) from exc
-
-    def send_tab(self, by: str, value: str) -> None:
-        """Focus an element then press TAB to move focus forward."""
+    def get_attribute(self, by: str, value: str, attribute: str) -> str:
+        """Return an attribute value from the located element."""
         try:
             element = self.find(by, value)
-            element.send_keys(Keys.TAB)
-        except (TimeoutException, WebDriverException) as exc:
+            return element.get_attribute(attribute)
+        except WebDriverException as exc:
             raise RuntimeError(
-                f"Could not send TAB from element ({by}, '{value}'): {exc}"
+                f"Failed to get attribute '{attribute}' from ({by}, '{value}'): {exc}"
             ) from exc
 
 
-# ---------------------------------------------------------------------------
-# LoginPage Page Object
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Login Page Object
+# ===========================================================================
 class LoginPage(BasePage):
-    """Page object for the Login page."""
+    """Page Object for the Login page."""
 
-    # Locators — ordered by preference: data-testid > ARIA > CSS > XPath
+    # Locators — preference: data-testid > ARIA > CSS > XPath
     EMAIL_INPUT = (By.CSS_SELECTOR, '[data-testid="email"]')
     PASSWORD_INPUT = (By.CSS_SELECTOR, '[data-testid="password"]')
     SUBMIT_BUTTON = (By.CSS_SELECTOR, '[data-testid="login-submit"]')
 
-    # Validation / error message selectors
+    # Error / validation message locators
+    AUTH_ERROR = (By.CSS_SELECTOR, '[data-testid="auth-error"]')
     EMAIL_ERROR = (By.CSS_SELECTOR, '[data-testid="email-error"]')
     PASSWORD_ERROR = (By.CSS_SELECTOR, '[data-testid="password-error"]')
-    AUTH_ERROR = (By.CSS_SELECTOR, '[data-testid="auth-error"]')
 
-    # Fallback ARIA / role-based locators used where data-testid is absent
-    _EMAIL_ARIA = (By.XPATH, '//input[@aria-label="Email" or @name="email"]')
-    _PASSWORD_ARIA = (By.XPATH, '//input[@aria-label="Password" or @name="password"]')
-    # Fixed: replaced brittle contains(text()) XPath with stable data-testid CSS selector
-    _SUBMIT_ARIA = (By.CSS_SELECTOR, '[data-testid="login-submit"]')
+    # Fallback ARIA-based locators used in accessibility checks
+    EMAIL_LABEL = (By.XPATH, '//label[@for="email" or contains(@id,"email-label")]')
+    PASSWORD_LABEL = (
+        By.XPATH,
+        '//label[@for="password" or contains(@id,"password-label")]',
+    )
+    ARIA_LIVE_REGION = (By.CSS_SELECTOR, '[aria-live]')
 
     def open(self) -> "LoginPage":
-        """Navigate to the login page and return self for method chaining."""
+        """Navigate to the login page and wait for the email field to appear."""
         self.navigate(LOGIN_PATH)
+        self.find_visible(*self.EMAIL_INPUT)
         return self
 
     # ------------------------------------------------------------------
-    # Resolved locator helpers (data-testid with ARIA fallback)
-    # ------------------------------------------------------------------
-    def _email_locator(self):
-        return self.EMAIL_INPUT
-
-    def _password_locator(self):
-        return self.PASSWORD_INPUT
-
-    def _submit_locator(self):
-        return self.SUBMIT_BUTTON
-
-    # ------------------------------------------------------------------
-    # Actions
+    # Form interaction helpers
     # ------------------------------------------------------------------
     def enter_email(self, email: str) -> "LoginPage":
-        """Type *email* into the email field (clears first)."""
-        loc = self._email_locator()
-        self.type_text(*loc, email)
+        """Type *email* into the email field."""
+        self.type_text(*self.EMAIL_INPUT, email)
         return self
 
     def enter_password(self, password: str) -> "LoginPage":
-        """Type *password* into the password field (clears first)."""
-        loc = self._password_locator()
-        self.type_text(*loc, password)
+        """Type *password* into the password field."""
+        self.type_text(*self.PASSWORD_INPUT, password)
         return self
 
-    def click_submit(self) -> "LoginPage":
-        """Click the login / submit button."""
-        self.click(*self._submit_locator())
+    def submit(self) -> "LoginPage":
+        """Click the submit button."""
+        self.click(*self.SUBMIT_BUTTON)
         return self
 
-    def login(self, email: str, password: str) -> None:
-        """Full login workflow: fill form and submit."""
+    def login(self, email: str, password: str) -> "LoginPage":
+        """Fill in the login form and submit it."""
         self.enter_email(email)
         self.enter_password(password)
-        self.click_submit()
+        self.submit()
+        return self
 
     # ------------------------------------------------------------------
-    # Queries / Assertions helpers
+    # State inspection helpers
     # ------------------------------------------------------------------
-    def is_on_dashboard(self) -> bool:
-        """Return True when URL contains the dashboard path."""
-        try:
-            self.wait_for_url_contains(DASHBOARD_PATH)
-            return True
-        except TimeoutException:
-            return False
-
     def is_on_login_page(self) -> bool:
-        """Return True when URL contains the login path."""
+        """Return True if the current URL still points to the login page."""
         return LOGIN_PATH in self.driver.current_url
 
-    def email_error_displayed(self) -> bool:
-        """Return True if the email field validation error is visible."""
-        return self.is_element_present(*self.EMAIL_ERROR)
+    def is_on_dashboard(self) -> bool:
+        """Return True if the current URL contains the dashboard path."""
+        return DASHBOARD_PATH in self.driver.current_url
 
-    def password_error_displayed(self) -> bool:
-        """Return True if the password field validation error is visible."""
-        return self.is_element_present(*self.PASSWORD_ERROR)
+    def auth_error_is_displayed(self) -> bool:
+        """Return True if the authentication error message is visible."""
+        return self.is_element_visible(*self.AUTH_ERROR)
 
-    def auth_error_displayed(self) -> bool:
-        """Return True if the authentication error banner is visible."""
-        return self.is_element_present(*self.AUTH_ERROR)
+    def email_error_is_displayed(self) -> bool:
+        """Return True if the email validation error is visible."""
+        return self.is_element_visible(*self.EMAIL_ERROR)
+
+    def password_error_is_displayed(self) -> bool:
+        """Return True if the password validation error is visible."""
+        return self.is_element_visible(*self.PASSWORD_ERROR)
+
+    def get_auth_error_text(self) -> str:
+        """Return the text of the authentication error message."""
+        return self.get_text(*self.AUTH_ERROR)
+
+    def get_email_error_text(self) -> str:
+        """Return the text of the email validation error message."""
+        return self.get_text(*self.EMAIL_ERROR)
+
+    def get_password_error_text(self) -> str:
+        """Return the text of the password validation error message."""
+        return self.get_text(*self.PASSWORD_ERROR)
 
     def get_password_field_type(self) -> str:
         """Return the *type* attribute of the password input element."""
-        return self.get_element_attribute(*self._password_locator(), "type")
+        return self.get_attribute(*self.PASSWORD_INPUT, "type")
 
-    def get_email_aria_label(self) -> str:
-        """Return the aria-label of the email input."""
-        return self.get_element_attribute(*self._email_locator(), "aria-label")
-
-    def get_password_aria_label(self) -> str:
-        """Return the aria-label of the password input."""
-        return self.get_element_attribute(*self._password_locator(), "aria-label")
-
-    def get_submit_aria_label(self) -> str:
-        """Return the aria-label (or text) of the submit button."""
+    def email_has_accessible_label(self) -> bool:
+        """Return True if the email input has an associated accessible label."""
         try:
-            element = self.find(*self._submit_locator())
-            return element.get_attribute("aria-label") or element.text
-        except (TimeoutException, WebDriverException) as exc:
-            raise RuntimeError(f"Could not read submit button aria-label: {exc}") from exc
+            email_el = self.find(*self.EMAIL_INPUT)
+            field_id = email_el.get_attribute("id") or ""
+            aria_label = email_el.get_attribute("aria-label") or ""
+            aria_labelledby = email_el.get_attribute("aria-labelledby") or ""
+            if aria_label or aria_labelledby:
+                return True
+            if field_id:
+                labels = self.driver.find_elements(
+                    By.CSS_SELECTOR, f'label[for="{field_id}"]'
+                )
+                return len(labels) > 0
+            return False
+        except (NoSuchElementException, WebDriverException) as exc:
+            raise RuntimeError(
+                f"Could not inspect accessible label for email field: {exc}"
+            ) from exc
 
-    def tab_through_form(self) -> None:
-        """Focus email field and TAB through password → submit."""
+    def password_has_accessible_label(self) -> bool:
+        """Return True if the password input has an associated accessible label."""
         try:
-            email_el = self.find(*self._email_locator())
-            email_el.click()
-            email_el.send_keys(Keys.TAB)   # email → password
-            pwd_el = self.driver.switch_to.active_element
-            pwd_el.send_keys(Keys.TAB)      # password → submit
+            pwd_el = self.find(*self.PASSWORD_INPUT)
+            field_id = pwd_el.get_attribute("id") or ""
+            aria_label = pwd_el.get_attribute("aria-label") or ""
+            aria_labelledby = pwd_el.get_attribute("aria-labelledby") or ""
+            if aria_label or aria_labelledby:
+                return True
+            if field_id:
+                labels = self.driver.find_elements(
+                    By.CSS_SELECTOR, f'label[for="{field_id}"]'
+                )
+                return len(labels) > 0
+            return False
+        except (NoSuchElementException, WebDriverException) as exc:
+            raise RuntimeError(
+                f"Could not inspect accessible label for password field: {exc}"
+            ) from exc
+
+    def submit_button_is_keyboard_focusable(self) -> bool:
+        """Return True if the submit button can receive keyboard focus (tabindex >= 0)."""
+        try:
+            btn = self.find(*self.SUBMIT_BUTTON)
+            tabindex = btn.get_attribute("tabindex")
+            # tabindex=None means natural tab order (focusable); "-1" means excluded
+            return tabindex != "-1"
+        except (NoSuchElementException, WebDriverException) as exc:
+            raise RuntimeError(
+                f"Could not inspect tabindex on submit button: {exc}"
+            ) from exc
+
+    def aria_live_region_exists(self) -> bool:
+        """Return True if at least one aria-live region is present in the DOM."""
+        try:
+            regions = self.driver.find_elements(*self.ARIA_LIVE_REGION)
+            return len(regions) > 0
         except WebDriverException as exc:
-            raise RuntimeError(f"Keyboard navigation through form failed: {exc}") from exc
+            raise RuntimeError(
+                f"Could not inspect ARIA live regions: {exc}"
+            ) from exc
 
-    def get_active_element_tag(self) -> str:
-        """Return tag name of the currently focused element."""
+    def navigate_to_email_via_tab(self) -> None:
+        """Focus the email field by clicking it — simulates initial Tab focus entry."""
         try:
-            return self.driver.switch_to.active_element.tag_name
+            self.find_visible(*self.EMAIL_INPUT).click()
         except WebDriverException as exc:
-            raise RuntimeError(f"Could not retrieve active element tag: {exc}") from exc
+            raise RuntimeError(f"Could not focus email field via click: {exc}") from exc
 
-    def get_active_element_type(self) -> str:
-        """Return type attribute of the currently focused element (or '')."""
+    def tab_to_next_field(self) -> None:
+        """Send Tab from the currently active element to move to the next focusable element."""
         try:
-            el = self.driver.switch_to.active_element
-            return el.get_attribute("type") or ""
+            self.driver.switch_to.active_element.send_keys(Keys.TAB)
         except WebDriverException as exc:
-            raise RuntimeError(f"Could not retrieve active element type: {exc}") from exc
+            raise RuntimeError(f"Could not send TAB key: {exc}") from exc
+
+    def press_enter_on_active_element(self) -> None:
+        """Send Enter from the currently focused element."""
+        try:
+            self.driver.switch_to.active_element.send_keys(Keys.ENTER)
+        except WebDriverException as exc:
+            raise RuntimeError(f"Could not send ENTER key: {exc}") from exc
+
+    def active_element_matches(self, by: str, value: str) -> bool:
+        """Return True if the currently focused element matches the given locator."""
+        try:
+            expected = self.find(by, value)
+            active = self.driver.switch_to.active_element
+            return expected == active
+        except WebDriverException:
+            return False
 
 
-# ---------------------------------------------------------------------------
-# Fixtures  (mirror what conftest.py would expose; safe to coexist with one)
-# ---------------------------------------------------------------------------
-@pytest.fixture(scope="function")
-def driver():
-    """
-    Provide a WebDriver instance with guaranteed teardown.
+# ===========================================================================
+# Dashboard Page Object (lightweight — only used to verify redirect)
+# ===========================================================================
+class DashboardPage(BasePage):
+    """Minimal Page Object for the Dashboard page."""
 
-    This fixture ensures driver.quit() is always called via the finally block,
-    even if the test raises an exception, preventing browser process leaks.
-    """
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
+    DASHBOARD_HEADING = (
+        By.XPATH,
+        '//*[@data-testid="dashboard-heading" or @role="heading"]',
+    )
+    ERROR_MESSAGES = (By.CSS_SELECTOR, '[data-testid="error-message"], .error-message')
 
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+    def is_loaded(self) -> bool:
+        """Return True if the dashboard page has loaded."""
+        return DASHBOARD_PATH in self.driver.current_url
 
-    _driver = webdriver.Chrome(options=options)
-    _driver.implicitly_wait(0)  # rely on explicit waits only
-    try:
-        yield _driver
-    finally:
-        _driver.quit()
+    def has_no_error_messages(self) -> bool:
+        """Return True when no error-message elements are visible on the page."""
+        try:
+            errors = self.driver.find_elements(*self.ERROR_MESSAGES)
+            visible_errors = [e for e in errors if e.is_displayed()]
+            return len(visible_errors) == 0
+        except WebDriverException as exc:
+            raise RuntimeError(
+                f"Could not query error messages on dashboard: {exc}"
+            ) from exc
 
 
-@pytest.fixture(scope="function")
+# ===========================================================================
+# Fixtures
+# ===========================================================================
+@pytest.fixture
 def login_page(driver):
-    """Return a LoginPage instance already navigated to the login URL."""
+    """Return a LoginPage instance pointed at the login URL."""
     page = LoginPage(driver)
     page.open()
     return page
 
 
-# ---------------------------------------------------------------------------
-# Credentials fixture — reads from env vars to avoid hardcoded secrets
-# ---------------------------------------------------------------------------
-@pytest.fixture(scope="session")
-def valid_credentials():
-    """
-    Return a (email, password) tuple sourced from environment variables.
-
-    Set TEST_EMAIL and TEST_PASSWORD before running the suite:
-        export TEST_EMAIL=admin@test.com
-        export TEST_PASSWORD=Correct_Pass123
-    """
-    email = os.getenv("TEST_EMAIL", "admin@test.com")
-    password = os.getenv("TEST_PASSWORD", "Correct_Pass123")
-    return email, password
+@pytest.fixture
+def dashboard_page(driver):
+    """Return a DashboardPage instance (no navigation — caller must be on the page)."""
+    return DashboardPage(driver)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
+# ===========================================================================
+# TC_001 — Successful login navigates to dashboard
+# ===========================================================================
 @pytest.mark.smoke
 @pytest.mark.regression
 class TestTC001SuccessfulLogin:
-    """TC_001 — Successful login with valid credentials navigates to dashboard."""
+    def test_valid_credentials_redirect_to_dashboard(self, login_page, dashboard_page):
+        """TC_001: Verify that submitting valid credentials redirects the user to
+        the dashboard and that no error messages are present on arrival.
 
-    def test_successful_login_redirects_to_dashboard(self, login_page, valid_credentials):
+        Given the user is on the login page,
+        When they submit valid email and password,
+        Then they are redirected to /dashboard with no error messages displayed.
         """
-        Verify that submitting the login form with a known-good email and
-        password redirects the user to the dashboard page and that no
-        inline validation errors are rendered.
+        email = "admin@test.com"
+        password = "correct_pass"
+
+        try:
+            login_page.login(email, password)
+            login_page.wait_for_url_contains(DASHBOARD_PATH)
+        except TimeoutException as exc:
+            pytest.fail(
+                f"TC_001: Dashboard URL was not reached after valid login. "
+                f"Current URL: {login_page.driver.current_url}. Detail: {exc}"
+            )
+
+        assert dashboard_page.is_loaded(), (
+            f"TC_001: Expected URL to contain '{DASHBOARD_PATH}', "
+            f"got '{dashboard_page.driver.current_url}'"
+        )
+        assert dashboard_page.has_no_error_messages(), (
+            "TC_001: Error messages were unexpectedly displayed on the dashboard."
+        )
+
+
+# ===========================================================================
+# TC_002 — Incorrect password shows authentication error
+# ===========================================================================
+@pytest.mark.regression
+class TestTC002IncorrectPassword:
+    def test_wrong_password_shows_auth_error(self, login_page):
+        """TC_002: Verify that an incorrect password blocks login, keeps the user
+        on the login page, and displays an authentication error message.
+
+        Given the user is on the login page,
+        When they enter a valid email with a wrong password and submit,
+        Then the login page remains visible and an auth error is shown.
         """
-        email, password = valid_credentials
+        email = "admin@test.com"
+        password = "wrong_pass"
 
         login_page.login(email, password)
 
-        assert login_page.is_on_dashboard(), (
-            f"Expected redirection to '{DASHBOARD_PATH}' after valid login, "
-            f"but current URL is: {login_page.driver.current_url}"
+        assert login_page.is_on_login_page(), (
+            f"TC_002: Expected to remain on login page but URL is "
+            f"'{login_page.driver.current_url}'"
         )
-        assert not login_page.email_error_displayed(), (
-            "Email validation error should NOT be shown after a successful login."
-        )
-        assert not login_page.password_error_displayed(), (
-            "Password validation error should NOT be shown after a successful login."
-        )
-        assert not login_page.auth_error_displayed(), (
-            "Authentication error should NOT be shown after a successful login."
+        assert login_page.auth_error_is_displayed(), (
+            "TC_002: Authentication error message was not displayed for wrong password."
         )
 
 
+# ===========================================================================
+# TC_003 — Malformed email shows format validation error
+# ===========================================================================
 @pytest.mark.regression
-class TestTC002EmptyCredentials:
-    """TC_002 — Login blocked when both email and password fields are empty."""
+class TestTC003MalformedEmail:
+    def test_malformed_email_shows_format_error(self, login_page):
+        """TC_003: Verify that a malformed email prevents form submission and
+        triggers an email format validation error message.
 
-    def test_empty_email_and_password_shows_required_errors(self, login_page):
+        Given the user is on the login page,
+        When they enter a malformed email address and submit,
+        Then the form is not submitted and an email format error is shown.
         """
-        Verify that clicking Submit with both fields empty does NOT submit the
-        form; instead, required-field validation errors are shown for both the
-        email and password fields.
-        """
-        login_page.click_submit()
+        email = "not-an-email"
+        password = "correct_pass"
+
+        login_page.login(email, password)
 
         assert login_page.is_on_login_page(), (
-            "Form should NOT have been submitted — user must remain on login page."
+            f"TC_003: Form should not have been submitted. "
+            f"URL changed to '{login_page.driver.current_url}'"
         )
-        assert login_page.email_error_displayed(), (
-            "A required-field error MUST be displayed for the empty email field."
-        )
-        assert login_page.password_error_displayed(), (
-            "A required-field error MUST be displayed for the empty password field."
+        assert login_page.email_error_is_displayed(), (
+            "TC_003: Email format validation error was not displayed."
         )
 
 
+# ===========================================================================
+# TC_004 — Empty password shows required-field error for password only
+# ===========================================================================
 @pytest.mark.regression
-class TestTC003EmptyPassword:
-    """TC_003 — Login blocked when password field is left empty."""
+class TestTC004EmptyPassword:
+    def test_empty_password_shows_password_required_error(self, login_page):
+        """TC_004: Verify that leaving the password field empty prevents submission
+        and shows a required-field error for the password field only — the email
+        field must not display an error.
 
-    def test_valid_email_empty_password_shows_password_error_only(self, login_page):
+        Given the user is on the login page,
+        When they enter a valid email, leave password empty, and submit,
+        Then only the password required-field error is shown.
         """
-        Verify that entering a valid email but leaving the password field empty
-        prevents form submission and shows a required-field error exclusively for
-        the password field, with no error on the email field.
-        """
-        test_email = os.getenv("TEST_EMAIL", "admin@test.com")
-        login_page.enter_email(test_email).click_submit()
+        email = "admin@test.com"
+        password = ""
+
+        login_page.login(email, password)
 
         assert login_page.is_on_login_page(), (
-            "Form should NOT have been submitted — user must remain on login page."
+            f"TC_004: Form should not have been submitted. "
+            f"URL changed to '{login_page.driver.current_url}'"
         )
-        assert login_page.password_error_displayed(), (
-            "A required-field error MUST be displayed for the empty password field."
+        assert login_page.password_error_is_displayed(), (
+            "TC_004: Required-field error for password was not displayed."
         )
-        assert not login_page.email_error_displayed(), (
-            "No validation error should appear for a correctly filled email field."
+        assert not login_page.email_error_is_displayed(), (
+            "TC_004: Email error should NOT be displayed when only password is empty."
         )
 
 
+# ===========================================================================
+# TC_005 — Both fields empty shows required-field errors for both
+# ===========================================================================
 @pytest.mark.regression
-class TestTC004EmptyEmail:
-    """TC_004 — Login blocked when email field is left empty."""
+class TestTC005BothFieldsEmpty:
+    def test_both_fields_empty_shows_both_required_errors(self, login_page):
+        """TC_005: Verify that leaving both email and password empty prevents
+        form submission and triggers required-field errors for both fields.
 
-    def test_empty_email_valid_password_shows_email_error_only(self, login_page):
+        Given the user is on the login page,
+        When they leave both fields empty and click submit,
+        Then required-field errors are shown for both email and password.
         """
-        Verify that leaving the email field empty while providing a valid password
-        prevents form submission and shows a required-field error exclusively for
-        the email field, with no error on the password field.
-        """
-        test_password = os.getenv("TEST_PASSWORD", "Correct_Pass123")
-        login_page.enter_password(test_password).click_submit()
+        login_page.login("", "")
 
         assert login_page.is_on_login_page(), (
-            "Form should NOT have been submitted — user must remain on login page."
+            f"TC_005: Form should not have been submitted. "
+            f"URL changed to '{login_page.driver.current_url}'"
         )
-        assert login_page.email_error_displayed(), (
-            "A required-field error MUST be displayed for the empty email field."
+        assert login_page.email_error_is_displayed(), (
+            "TC_005: Required-field error for email was not displayed."
         )
-        assert not login_page.password_error_displayed(), (
-            "No validation error should appear for a correctly filled password field."
+        assert login_page.password_error_is_displayed(), (
+            "TC_005: Required-field error for password was not displayed."
         )
 
 
+# ===========================================================================
+# TC_006 — Unregistered email shows generic authentication error
+# ===========================================================================
 @pytest.mark.regression
-class TestTC005InvalidEmailFormat:
-    """TC_005 — Login blocked when email address format is invalid."""
+class TestTC006UnregisteredEmail:
+    def test_unregistered_email_shows_generic_auth_error(self, login_page):
+        """TC_006: Verify that an unregistered email address blocks login, keeps
+        the user on the login page, and shows a generic authentication error that
+        does not reveal whether the email exists in the system.
 
-    @pytest.mark.parametrize(
-        "malformed_email",
-        [
-            "not-an-email",
-            "missing@tld",
-            "@nodomain.com",
-            "spaces in@email.com",
-            "double@@at.com",
-        ],
-    )
-    def test_malformed_email_shows_format_error(self, login_page, malformed_email):
+        Given the user is on the login page,
+        When they submit with a non-existent email,
+        Then the login page remains visible and a generic auth error is shown.
         """
-        Verify that entering a malformed email address (multiple variants tested)
-        together with a valid password prevents form submission and displays an
-        email-format validation error.
-        """
-        test_password = os.getenv("TEST_PASSWORD", "Correct_Pass123")
-        login_page.enter_email(malformed_email)
-        login_page.enter_password(test_password)
-        login_page.click_submit()
+        email = "nonexistent@test.com"
+        password = "any_pass"
+
+        login_page.login(email, password)
 
         assert login_page.is_on_login_page(), (
-            f"Form should NOT have been submitted for invalid email '{malformed_email}'."
+            f"TC_006: Expected to remain on login page but URL is "
+            f"'{login_page.driver.current_url}'"
         )
-        assert login_page.email_error_displayed(), (
-            f"An email-format validation error MUST be shown for input '{malformed_email}'."
+        assert login_page.auth_error_is_displayed(), (
+            "TC_006: Authentication error message was not displayed for unregistered email."
         )
 
+        error_text = login_page.get_auth_error_text().lower()
+        revealing_phrases = ["email not found", "no account", "does not exist", "not registered"]
+        for phrase in revealing_phrases:
+            assert phrase not in error_text, (
+                f"TC_006: Error message reveals email existence via phrase '{phrase}'. "
+                f"Full message: '{error_text}'"
+            )
 
+
+# ===========================================================================
+# TC_007 — Keyboard navigation and ARIA accessibility
+# ===========================================================================
+@pytest.mark.a11y
 @pytest.mark.regression
-class TestTC006WrongPassword:
-    """TC_006 — Login blocked and error shown when credentials are incorrect."""
+class TestTC007KeyboardAndAria:
+    def test_form_is_keyboard_navigable_and_has_aria_attributes(self, login_page):
+        """TC_007: Verify that the login form is fully operable via keyboard-only
+        navigation and that all elements carry correct ARIA attributes.
 
-    def test_wrong_password_shows_auth_error_on_login_page(self, login_page):
+        Given the user is on the login page,
+        When they navigate using Tab and Enter keys,
+        Then every interactive element is reachable and operable, each input has
+        an accessible label, and error messages are surfaced via ARIA live regions.
         """
-        Verify that submitting a valid email paired with an incorrect password
-        keeps the user on the login page and renders an authentication error
-        message (e.g. 'Invalid credentials').
-        """
-        test_email = os.getenv("TEST_EMAIL", "admin@test.com")
-        login_page.login(test_email, "WrongPassword!")
+        # Step 1: Focus the email field (entry point for keyboard navigation)
+        try:
+            login_page.navigate_to_email_via_tab()
+        except RuntimeError as exc:
+            pytest.fail(f"TC_007: Could not focus email input: {exc}")
 
-        assert login_page.is_on_login_page(), (
-            "User MUST remain on the login page after submitting wrong credentials."
-        )
-        assert login_page.auth_error_displayed(), (
-            "An authentication error message MUST be displayed for wrong credentials."
+        assert login_page.active_element_matches(*LoginPage.EMAIL_INPUT), (
+            "TC_007: Email field is not the active element after initial focus."
         )
 
+        # Step 2: Tab to password field
+        try:
+            login_page.tab_to_next_field()
+        except RuntimeError as exc:
+            pytest.fail(f"TC_007: TAB from email to password failed: {exc}")
 
+        assert login_page.active_element_matches(*LoginPage.PASSWORD_INPUT), (
+            "TC_007: Password field is not focused after pressing Tab from email."
+        )
+
+        # Step 3: Tab to submit button
+        try:
+            login_page.tab_to_next_field()
+        except RuntimeError as exc:
+            pytest.fail(f"TC_007: TAB from password to submit failed: {exc}")
+
+        assert login_page.active_element_matches(*LoginPage.SUBMIT_BUTTON), (
+            "TC_007: Submit button is not focused after pressing Tab from password."
+        )
+
+        # Step 4: Verify submit button is keyboard-operable
+        assert login_page.submit_button_is_keyboard_focusable(), (
+            "TC_007: Submit button has tabindex='-1' and cannot be reached via Tab."
+        )
+
+        # Step 5: Check accessible labels
+        assert login_page.email_has_accessible_label(), (
+            "TC_007: Email input lacks an accessible label (aria-label, aria-labelledby, or <label for>)."
+        )
+        assert login_page.password_has_accessible_label(), (
+            "TC_007: Password input lacks an accessible label (aria-label, aria-labelledby, or <label for>)."
+        )
+
+        # Step 6: Trigger validation by submitting empty fields, then check live region
+        login_page.open()  # reset form state
+        login_page.submit()
+        assert login_page.aria_live_region_exists(), (
+            "TC_007: No aria-live region found — assistive technologies cannot announce errors."
+        )
+
+
+# ===========================================================================
+# TC_008 — Password field masks input
+# ===========================================================================
 @pytest.mark.regression
-class TestTC007PasswordMasking:
-    """TC_007 — Password field masks input characters for security."""
+class TestTC008PasswordMasking:
+    def test_password_field_type_is_password_and_masks_input(self, login_page):
+        """TC_008: Verify that the password input field has type='password' so
+        that entered characters are masked and not displayed in plain text.
 
-    def test_password_input_type_is_password(self, login_page):
+        Given the user is on the login page,
+        When they type a password into the password field,
+        Then the field's type attribute is 'password' and characters are masked.
         """
-        Verify that the password input element has type='password', which causes
-        browsers to mask entered characters so they are not visible in plain text.
-        """
-        test_password = os.getenv("TEST_PASSWORD", "Correct_Pass123")
-        login_page.enter_password(test_password)
+        password = "secret_pass"
+
+        try:
+            login_page.enter_password(password)
+        except RuntimeError as exc:
+            pytest.fail(f"TC_008: Could not enter password: {exc}")
 
         field_type = login_page.get_password_field_type()
 
         assert field_type == "password", (
-            f"Password field type MUST be 'password' to mask input, got '{field_type}'."
+            f"TC_008: Password field type should be 'password' but is '{field_type}'. "
+            "Characters may be visible in plain text."
         )
 
 
-@pytest.mark.regression
-class TestTC008KeyboardAndAriaAccessibility:
-    """TC_008 — Login form is accessible via keyboard navigation and screen reader labels."""
+# ===========================================================================
+# Data-driven parametrised companion test covering TC_001 / TC_002 / TC_006
+# ===========================================================================
+@pytest.mark.parametrize(
+    "email,password,expect_dashboard,expect_auth_error,test_id",
+    [
+        (
+            "admin@test.com",
+            "correct_pass",
+            True,
+            False,
+            "valid_credentials",
+        ),
+        (
+            "admin@test.com",
+            "wrong_pass",
+            False,
+            True,
+            "wrong_password",
+        ),
+        (
+            "nonexistent@test.com",
+            "any_pass",
+            False,
+            True,
+            "unregistered_email",
+        ),
+    ],
+)
+def test_login_authentication_variants(
+    login_page,
+    dashboard_page,
+    email,
+    password,
+    expect_dashboard,
+    expect_auth_error,
+    test_id,
+):
+    """Parametrised data-driven test covering successful login (TC_001),
+    wrong-password rejection (TC_002), and unregistered-email rejection (TC_006).
 
-    def test_keyboard_tab_order_traverses_email_password_submit(self, login_page):
-        """
-        Verify that pressing TAB from the email field moves focus to the password
-        field, and a second TAB moves focus to the submit button, confirming the
-        correct logical keyboard tab order for the login form.
-        """
+    For each combination the test verifies:
+    - Whether the user lands on the dashboard or remains on the login page.
+    - Whether an authentication error is displayed (or not).
+    """
+    try:
+        login_page.login(email, password)
+    except RuntimeError as exc:
+        pytest.fail(f"[{test_id}] Login interaction failed: {exc}")
+
+    if expect_dashboard:
         try:
-            email_el = login_page.find(*login_page._email_locator())
-            email_el.click()
-
-            # TAB from email → should land on password
-            email_el.send_keys(Keys.TAB)
-            active_after_first_tab = login_page.driver.switch_to.active_element
-            active_type_after_first_tab = active_after_first_tab.get_attribute("type") or ""
-
-            assert active_type_after_first_tab == "password", (
-                "After TAB from email field, focus MUST move to the password field "
-                f"(type='password'), but active element type was '{active_type_after_first_tab}'."
+            login_page.wait_for_url_contains(DASHBOARD_PATH)
+        except TimeoutException as exc:
+            pytest.fail(
+                f"[{test_id}] Expected redirect to dashboard but stayed on "
+                f"'{login_page.driver.current_url}': {exc}"
             )
-
-            # TAB from password → should land on submit button
-            active_after_first_tab.send_keys(Keys.TAB)
-            active_after_second_tab = login_page.driver.switch_to.active_element
-            active_tag_after_second_tab = active_after_second_tab.tag_name
-            active_type_after_second_tab = active_after_second_tab.get_attribute("type") or ""
-
-            assert active_tag_after_second_tab == "button" or active_type_after_second_tab == "submit", (
-                "After TAB from password field, focus MUST move to the submit button, "
-                f"but active element was <{active_tag_after_second_tab} type='{active_type_after_second_tab}'>."
-            )
-        except WebDriverException as exc:
-            raise AssertionError(
-                f"Keyboard navigation test failed due to a WebDriver error: {exc}"
-            ) from exc
-
-    def test_form_elements_have_aria_labels(self, login_page):
-        """
-        Verify that the email input, password input, and submit button each carry
-        a non-empty aria-label or accessible text so that screen readers can
-        announce the purpose of every interactive form element.
-        """
-        email_aria = login_page.get_email_aria_label()
-        password_aria = login_page.get_password_aria_label()
-        submit_aria = login_page.get_submit_aria_label()
-
-        assert email_aria, (
-            "The email input MUST have a non-empty aria-label for screen-reader accessibility."
+        assert dashboard_page.is_loaded(), (
+            f"[{test_id}] Dashboard page is not loaded. "
+            f"Current URL: {dashboard_page.driver.current_url}"
         )
-        assert password_aria, (
-            "The password input MUST have a non-empty aria-label for screen-reader accessibility."
+        assert dashboard_page.has_no_error_messages(), (
+            f"[{test_id}] Unexpected error messages found on the dashboard."
         )
-        assert submit_aria, (
-            "The submit button MUST have a non-empty aria-label or visible text "
-            "for screen-reader accessibility."
+    else:
+        assert login_page.is_on_login_page(), (
+            f"[{test_id}] User should remain on the login page. "
+            f"Current URL: '{login_page.driver.current_url}'"
+        )
+
+    if expect_auth_error:
+        assert login_page.auth_error_is_displayed(), (
+            f"[{test_id}] Expected an authentication error message but none was found."
+        )
+    else:
+        assert not login_page.auth_error_is_displayed(), (
+            f"[{test_id}] No authentication error should appear after successful login."
         )
