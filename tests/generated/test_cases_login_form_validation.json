@@ -1,0 +1,213 @@
+{
+  "feature": "Login Form Validation",
+  "scenarios": [
+    {
+      "id": "TC_001",
+      "name": "Successful login with valid credentials navigates to dashboard",
+      "tags": [
+        "@smoke",
+        "@regression",
+        "@high-risk"
+      ],
+      "priority": "high",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user enters a valid email and correct password",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the user is redirected to the dashboard",
+        "no error messages are displayed"
+      ],
+      "test_data": {
+        "email": "admin@test.com",
+        "password": "correct_pass",
+        "expected_url": "/dashboard"
+      }
+    },
+    {
+      "id": "TC_002",
+      "name": "Login blocked and authentication error shown for incorrect password",
+      "tags": [
+        "@regression",
+        "@high-risk"
+      ],
+      "priority": "high",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user enters a valid email and an incorrect password",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the user remains on the login page",
+        "an authentication error message is displayed"
+      ],
+      "test_data": {
+        "email": "admin@test.com",
+        "password": "wrong_pass",
+        "expected_error": "Invalid email or password"
+      }
+    },
+    {
+      "id": "TC_003",
+      "name": "Login blocked and required field errors shown when both fields are empty",
+      "tags": [
+        "@regression",
+        "@a11y"
+      ],
+      "priority": "high",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user leaves both email and password fields empty",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the form is not submitted",
+        "required field validation errors are shown for both email and password fields"
+      ],
+      "test_data": {
+        "email": "",
+        "password": "",
+        "expected_errors": [
+          "Email is required",
+          "Password is required"
+        ]
+      }
+    },
+    {
+      "id": "TC_004",
+      "name": "Login blocked and required field error shown when password is empty",
+      "tags": [
+        "@regression"
+      ],
+      "priority": "high",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user enters a valid email and leaves the password field empty",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the form is not submitted",
+        "a required field error is shown for the password field only"
+      ],
+      "test_data": {
+        "email": "admin@test.com",
+        "password": "",
+        "expected_error": "Password is required"
+      }
+    },
+    {
+      "id": "TC_005",
+      "name": "Login blocked and email format error shown for invalid email format",
+      "tags": [
+        "@regression",
+        "@a11y"
+      ],
+      "priority": "medium",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user enters an invalid email format and a valid password",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the form is not submitted",
+        "an email format validation error is displayed"
+      ],
+      "test_data": {
+        "email": "not-an-email",
+        "password": "correct_pass",
+        "expected_error": "Please enter a valid email address"
+      }
+    },
+    {
+      "id": "TC_006",
+      "name": "Login blocked and required field error shown when only email is empty",
+      "tags": [
+        "@regression"
+      ],
+      "priority": "medium",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user leaves the email field empty and enters a valid password",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the form is not submitted",
+        "a required field error is shown for the email field only"
+      ],
+      "test_data": {
+        "email": "",
+        "password": "correct_pass",
+        "expected_error": "Email is required"
+      }
+    },
+    {
+      "id": "TC_007",
+      "name": "Account lockout message shown after multiple consecutive failed login attempts",
+      "tags": [
+        "@regression",
+        "@high-risk"
+      ],
+      "priority": "high",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user submits invalid credentials five consecutive times"
+      ],
+      "then": [
+        "the account is temporarily locked",
+        "a lockout warning message is displayed to the user"
+      ],
+      "test_data": {
+        "email": "admin@test.com",
+        "password": "wrong_pass",
+        "attempt_count": 5,
+        "expected_message": "Account temporarily locked due to multiple failed attempts"
+      }
+    },
+    {
+      "id": "TC_008",
+      "name": "Login form fields and submit button are keyboard navigable and screen-reader accessible",
+      "tags": [
+        "@a11y",
+        "@regression"
+      ],
+      "priority": "medium",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user navigates the form using only the keyboard Tab and Enter keys"
+      ],
+      "then": [
+        "the email field, password field, and submit button are reachable via Tab",
+        "ARIA labels and roles are present on all form controls",
+        "form submission is possible using the Enter key"
+      ],
+      "test_data": {
+        "aria_attributes": [
+          "aria-label",
+          "aria-required",
+          "aria-describedby"
+        ],
+        "expected_roles": [
+          "textbox",
+          "button"
+        ]
+      }
+    }
+  ]
+}
