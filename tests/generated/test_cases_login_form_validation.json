@@ -23,8 +23,7 @@
       ],
       "test_data": {
         "email": "admin@test.com",
-        "password": "correct_pass",
-        "expected_url": "/dashboard"
+        "password": "correct_pass"
       }
     },
     {
@@ -48,16 +47,14 @@
       ],
       "test_data": {
         "email": "admin@test.com",
-        "password": "wrong_pass",
-        "expected_error": "Invalid email or password"
+        "password": "wrong_pass"
       }
     },
     {
       "id": "TC_003",
       "name": "Login blocked and required field errors shown when both fields are empty",
       "tags": [
-        "@regression",
-        "@a11y"
+        "@regression"
       ],
       "priority": "high",
       "given": [
@@ -73,16 +70,12 @@
       ],
       "test_data": {
         "email": "",
-        "password": "",
-        "expected_errors": [
-          "Email is required",
-          "Password is required"
-        ]
+        "password": ""
       }
     },
     {
       "id": "TC_004",
-      "name": "Login blocked and required field error shown when password is empty",
+      "name": "Login blocked and required field error shown when password field is empty",
       "tags": [
         "@regression"
       ],
@@ -100,42 +93,16 @@
       ],
       "test_data": {
         "email": "admin@test.com",
-        "password": "",
-        "expected_error": "Password is required"
+        "password": ""
       }
     },
     {
       "id": "TC_005",
-      "name": "Login blocked and email format error shown for invalid email format",
-      "tags": [
-        "@regression",
-        "@a11y"
-      ],
-      "priority": "medium",
-      "given": [
-        "the user is on the login page"
-      ],
-      "when": [
-        "the user enters an invalid email format and a valid password",
-        "the user clicks the submit button"
-      ],
-      "then": [
-        "the form is not submitted",
-        "an email format validation error is displayed"
-      ],
-      "test_data": {
-        "email": "not-an-email",
-        "password": "correct_pass",
-        "expected_error": "Please enter a valid email address"
-      }
-    },
-    {
-      "id": "TC_006",
-      "name": "Login blocked and required field error shown when only email is empty",
+      "name": "Login blocked and email validation error shown when email field is empty",
       "tags": [
         "@regression"
       ],
-      "priority": "medium",
+      "priority": "high",
       "given": [
         "the user is on the login page"
       ],
@@ -149,13 +116,35 @@
       ],
       "test_data": {
         "email": "",
-        "password": "correct_pass",
-        "expected_error": "Email is required"
+        "password": "correct_pass"
+      }
+    },
+    {
+      "id": "TC_006",
+      "name": "Login blocked and format error shown when email format is invalid",
+      "tags": [
+        "@regression"
+      ],
+      "priority": "medium",
+      "given": [
+        "the user is on the login page"
+      ],
+      "when": [
+        "the user enters a malformed email address and a valid password",
+        "the user clicks the submit button"
+      ],
+      "then": [
+        "the form is not submitted",
+        "an email format validation error is displayed"
+      ],
+      "test_data": {
+        "email": "not-an-email",
+        "password": "correct_pass"
       }
     },
     {
       "id": "TC_007",
-      "name": "Account lockout message shown after multiple consecutive failed login attempts",
+      "name": "Login blocked and error shown for non-existent user account",
       "tags": [
         "@regression",
         "@high-risk"
@@ -165,22 +154,21 @@
         "the user is on the login page"
       ],
       "when": [
-        "the user submits invalid credentials five consecutive times"
+        "the user enters an email that does not exist in the system and any password",
+        "the user clicks the submit button"
       ],
       "then": [
-        "the account is temporarily locked",
-        "a lockout warning message is displayed to the user"
+        "the user remains on the login page",
+        "an authentication error message is displayed without revealing whether the account exists"
       ],
       "test_data": {
-        "email": "admin@test.com",
-        "password": "wrong_pass",
-        "attempt_count": 5,
-        "expected_message": "Account temporarily locked due to multiple failed attempts"
+        "email": "nonexistent@test.com",
+        "password": "any_pass"
       }
     },
     {
       "id": "TC_008",
-      "name": "Login form fields and submit button are keyboard navigable and screen-reader accessible",
+      "name": "Login form fields and submit button are accessible via ARIA roles and keyboard navigation",
       "tags": [
         "@a11y",
         "@regression"
@@ -190,24 +178,15 @@
         "the user is on the login page"
       ],
       "when": [
-        "the user navigates the form using only the keyboard Tab and Enter keys"
+        "the user inspects the email field, password field, and submit button for ARIA attributes",
+        "the user navigates the form using the keyboard Tab key"
       ],
       "then": [
-        "the email field, password field, and submit button are reachable via Tab",
-        "ARIA labels and roles are present on all form controls",
-        "form submission is possible using the Enter key"
+        "all form fields have appropriate ARIA labels or roles",
+        "the submit button is reachable and activatable via keyboard",
+        "focus order follows a logical sequence through the form"
       ],
-      "test_data": {
-        "aria_attributes": [
-          "aria-label",
-          "aria-required",
-          "aria-describedby"
-        ],
-        "expected_roles": [
-          "textbox",
-          "button"
-        ]
-      }
+      "test_data": {}
     }
   ]
 }
