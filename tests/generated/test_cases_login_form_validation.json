@@ -121,7 +121,7 @@
     },
     {
       "id": "TC_006",
-      "name": "Login blocked and format error shown when email format is invalid",
+      "name": "Login blocked and format error shown for invalid email format",
       "tags": [
         "@regression"
       ],
@@ -130,7 +130,7 @@
         "the user is on the login page"
       ],
       "when": [
-        "the user enters a malformed email address and a valid password",
+        "the user enters an invalid email format and a valid password",
         "the user clicks the submit button"
       ],
       "then": [
@@ -144,7 +144,7 @@
     },
     {
       "id": "TC_007",
-      "name": "Login blocked and error shown for non-existent user account",
+      "name": "Login blocked for non-existent user account",
       "tags": [
         "@regression",
         "@high-risk"
@@ -159,7 +159,7 @@
       ],
       "then": [
         "the user remains on the login page",
-        "an authentication error message is displayed without revealing whether the account exists"
+        "an authentication error message is displayed without revealing whether the email exists"
       ],
       "test_data": {
         "email": "nonexistent@test.com",
@@ -168,7 +168,7 @@
     },
     {
       "id": "TC_008",
-      "name": "Login form fields and submit button are accessible via ARIA roles and keyboard navigation",
+      "name": "Login form fields and submit button are accessible via keyboard and ARIA roles",
       "tags": [
         "@a11y",
         "@regression"
@@ -178,13 +178,13 @@
         "the user is on the login page"
       ],
       "when": [
-        "the user inspects the email field, password field, and submit button for ARIA attributes",
-        "the user navigates the form using the keyboard Tab key"
+        "the user navigates the form using the keyboard Tab key and activates submit via Enter",
+        "a screen reader inspects the form elements"
       ],
       "then": [
-        "all form fields have appropriate ARIA labels or roles",
-        "the submit button is reachable and activatable via keyboard",
-        "focus order follows a logical sequence through the form"
+        "all form fields have accessible labels and correct ARIA roles",
+        "focus order follows a logical sequence from email to password to submit button",
+        "error messages are announced by assistive technology when validation fails"
       ],
       "test_data": {}
     }
