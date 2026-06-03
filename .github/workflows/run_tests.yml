@@ -1,0 +1,76 @@
+name: Automated Test Suite
+
+on:
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: 'Browser to run tests on'
+        required: false
+        default: 'chrome'
+        type: choice
+        options: [chrome, firefox]
+      test_path:
+        description: 'Test file or directory (default: all generated tests)'
+        required: false
+        default: 'tests/generated/'
+
+  push:
+    branches: [auto-tests]
+    paths:
+      - 'tests/generated/**'
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        if: ${{ inputs.browser != 'firefox' }}
+
+      - name: Install Firefox
+        uses: browser-actions/setup-firefox@v1
+        if: ${{ inputs.browser == 'firefox' }}
+
+      - name: Run tests
+        env:
+          SELENIUM_BROWSER:   ${{ inputs.browser || 'chrome' }}
+          SELENIUM_HEADLESS:  'true'
+          SELENIUM_BASE_URL:  ${{ secrets.SELENIUM_BASE_URL }}
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          pytest ${{ inputs.test_path || 'tests/generated/' }} \
+            --html=reports/report.html \
+            --self-contained-html \
+            --json-report \
+            --json-report-file=reports/report.json \
+            -v
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: reports/
+          retention-days: 14
+
+      - name: Upload screenshots on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failure-screenshots
+          path: reports/screenshots/
+          retention-days: 7
